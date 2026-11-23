@@ -1,0 +1,19 @@
+# Secrets : ne jamais commiter de clés S3 ni de tokens
+.aws/
+.env
+*.env
+credentials*
+*secret*
+*token*
+
+# Données : elles vivent sur le S3 Onyxia, pas dans Git
+*.csv
+*.parquet
+data/
+/tmp/
+
+# Python et éditeur
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
