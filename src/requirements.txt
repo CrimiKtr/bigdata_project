@@ -1,0 +1,5 @@
+# Dépendances Python (installées avec : pip install -r src/requirements.txt)
+pandas
+pyarrow
+s3fs
+duckdb
