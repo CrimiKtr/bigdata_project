@@ -1,5 +1,5 @@
 """
-src/02_pipeline.py (VERSION DU COMMIT 4) : lecture et nettoyage des IPS des collèges (2016-2021)
+src/02_pipeline.py : nettoyage et agrégation des IPS des collèges (2016-2021)
 
 Historique :
   - PARTIE 1 (lecture S3 + nettoyage) : commit 4, jeudi 26 novembre 2026, Membre A
@@ -136,6 +136,34 @@ def nettoyer(df):
 # === FIN PARTIE 1 ===
 
 
+# ============================================================================
+# PARTIE 2 : agrégation et écriture Parquet dans processed/ (commit 6)
+# ============================================================================
+def agreger(df):
+    """IPS moyen par année, académie et secteur, puis écart public - privé."""
+    par_secteur = (
+        df.groupby(["annee", "academie", "secteur"])
+        .agg(nb_colleges=("uai", "count"), ips_moyen=("ips", "mean"), ips_median=("ips", "median"))
+        .reset_index()
+    )
+    par_secteur["ips_moyen"] = par_secteur["ips_moyen"].round(2)
+
+    pivot = par_secteur.pivot_table(index=["annee", "academie"], columns="secteur",
+                                    values=["ips_moyen", "nb_colleges"]).reset_index()
+    pivot.columns = ["_".join(str(x) for x in col if x).lower() for col in pivot.columns]
+    final = pivot  # colonnes : annee, academie, ips_moyen_prive, ips_moyen_public, nb_colleges_...
+    final["ecart_prive_moins_public"] = (final["ips_moyen_prive"] - final["ips_moyen_public"]).round(2)
+    final = final.sort_values(["annee", "ecart_prive_moins_public"], ascending=[True, False])
+    return par_secteur, final
+
+
+def ecrire_parquet(fs, chemin, df):
+    with fs.open(chemin, "wb") as f:
+        df.to_parquet(f, index=False)
+    print("Écrit :", chemin, f"({len(df)} lignes)")
+# === FIN PARTIE 2 ===
+
+
 def main():
     debut = datetime.now()
     fs, base = ouvrir_stockage()
@@ -147,7 +175,19 @@ def main():
     print("\n=== Rapport qualité ===")
     print(json.dumps(rapport, ensure_ascii=False, indent=2))
 
-    # La PARTIE 2 (agrégation + écriture Parquet) sera ajoutée au commit 6.
+    # PARTIE 2 (début)
+    fs.makedirs(f"{base}/processed", exist_ok=True)
+    par_secteur, final = agreger(propre)
+    ecrire_parquet(fs, f"{base}/processed/ips_colleges_clean.parquet", propre)
+    ecrire_parquet(fs, f"{base}/processed/ips_academie_secteur.parquet", par_secteur)
+    ecrire_parquet(fs, f"{base}/processed/ecart_public_prive.parquet", final)
+    with fs.open(f"{base}/processed/rapport_qualite.json", "w") as f:
+        json.dump(rapport, f, ensure_ascii=False, indent=2)
+
+    print("\n=== Écart public / privé : année la plus récente, 5 premières académies ===")
+    derniere = final[final["annee"] == final["annee"].max()]
+    print(derniere.head(5).to_string(index=False))
+    # PARTIE 2 (fin)
 
     print(f"\nPipeline terminé en {(datetime.now() - debut).total_seconds():.2f} s "
           f"({datetime.now():%Y-%m-%d %H:%M:%S})")
